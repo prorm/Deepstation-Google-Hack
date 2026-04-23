@@ -1,0 +1,33 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Event {
+  id          String        @id @default(cuid())
+  name        String
+  templateUrl String        // The S3/R2 URL of the blank PDF uploaded by the admin
+  createdAt   DateTime      @default(now())
+  participants Participant[]
+}
+
+model Participant {
+  id          String       @id @default(cuid())
+  eventId     String
+  event       Event        @relation(fields: [eventId], references: [id])
+  email       String       
+  metadata    Json         // The magic column for Excel data
+  certificate Certificate? // Links to the new table
+}
+
+model Certificate {
+  id            String      @id @default(cuid())
+  participantId String      @unique
+  participant   Participant @relation(fields: [participantId], references: [id])
+  status        String      @default("PENDING") // PENDING, COMPLETED, FAILED
+  fileUrl       String?     // Where it lives in AWS S3 once generated
+  createdAt     DateTime    @default(now())
+}
