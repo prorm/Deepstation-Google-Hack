@@ -6,12 +6,15 @@ import { useState } from "react";
 // The placeholders Swastik's engine expects
 const REQUIRED_PLACEHOLDERS = ["participantName"]; 
 
+type ExcelCell = string | number | boolean | null | undefined;
+type ExcelRow = Record<string, ExcelCell>;
+
 export default function DataMapper({ 
   headers, 
   excelData 
 }: { 
   headers: string[], 
-  excelData: any[] 
+  excelData: ExcelRow[] 
 }) {
   const [mapping, setMapping] = useState<Record<string, string>>({});
   const [isProcessing, setIsProcessing] = useState(false);
@@ -25,7 +28,7 @@ export default function DataMapper({
     
     // Transform the raw Excel rows using the user's mapping
     const formattedParticipants = excelData.map(row => {
-      const metadata: any = {};
+      const metadata: Record<string, unknown> = {};
       
       // Save mapped fields (like Name)
       REQUIRED_PLACEHOLDERS.forEach(placeholder => {

@@ -5,9 +5,12 @@ import { useState } from "react";
 import * as XLSX from "xlsx";
 import DataMapper from "./DataMapper"; 
 
+type ExcelCell = string | number | boolean | null | undefined;
+type ExcelRow = Record<string, ExcelCell>;
+
 export default function ExcelUploader() {
   const [headers, setHeaders] = useState<string[]>([]);
-  const [excelData, setExcelData] = useState<any[]>([]); // Changed to hold full data
+  const [excelData, setExcelData] = useState<ExcelRow[]>([]); // Changed to hold full data
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -20,7 +23,7 @@ export default function ExcelUploader() {
       const workbook = XLSX.read(data, { type: "binary" });
       const firstSheetName = workbook.SheetNames[0];
       const worksheet = workbook.Sheets[firstSheetName];
-      const jsonData = XLSX.utils.sheet_to_json(worksheet);
+      const jsonData = XLSX.utils.sheet_to_json<ExcelRow>(worksheet);
       
       if (jsonData.length > 0) {
         const columnHeaders = Object.keys(jsonData[0] as object);

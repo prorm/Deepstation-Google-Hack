@@ -4,24 +4,14 @@ import { generateCertificateBuffer } from "../utils/pdfEngine";
 import { processCertificateRecord } from "../workers/certificateWorker";
 import { PDFDocument } from 'pdf-lib';
 
-// Optional but recommended typing
-type Events = {
-  "certificate/generate": {
-    data: {
-      certificateId: string;
-      participantName: string;
-      templateId: string;
-    };
-  };
-};
-
 export const generateCertificate = inngest.createFunction(
   { 
     id: "generate-certificate-worker", 
-    triggers: [{ event: "certificate/generate" }] 
+    triggers: [{ event: "certificate/generate" }],
+    concurrency: { limit: 50 } // Limits to 50 concurrent PDF generations
   },
   async ({ event, step }) => {
-    const { certificateId, participantName, templateId } = event.data;
+    const { certificateId, participantName } = event.data;
 
     // Step 1: Fetch Template Details
     const template = await step.run("fetch-template-details", async () => {
@@ -47,7 +37,7 @@ export const generateCertificate = inngest.createFunction(
     });
 
     // Step 3: Upload to S3 & Update DB
-    await step.run("upload-and-update-db", async () => {
+    const dbRecord = await step.run("upload-and-update-db", async () => {
       // Decode string back to binary for AWS S3
       const finalBuffer = Buffer.from(pdfBase64, 'base64');
       
@@ -56,6 +46,20 @@ export const generateCertificate = inngest.createFunction(
         finalBuffer, 
         `${certificateId}-${participantName}`
       );
+
+      // Placeholder: Fetching email from DB for the hand-off
+      return { email: "student@example.com" }; 
+    });
+
+    // Step 4: THE HAND-OFF - Trigger the Email Worker
+    // This MUST happen here, not in the email worker!
+    await step.sendEvent("trigger-email-worker", {
+      name: "certificate/completed",
+      data: {
+        email: dbRecord.email,
+        participantName: participantName,
+        s3FileName: `${certificateId}-${participantName}`,
+      },
     });
 
     return { success: true, certificateId };

@@ -1,13 +1,28 @@
 import { NextResponse } from "next/server";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, type Prisma } from "@prisma/client";
 import { inngest } from "@/inngest/client";
 
 const prisma = new PrismaClient();
 
+type UploadParticipant = {
+  email?: string;
+  metadata: Prisma.InputJsonValue;
+};
+
+type UploadBody = {
+  eventId: string;
+  participants: UploadParticipant[];
+};
+
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
-    const { eventId, participants } = body;
+    const body = (await req.json()) as Partial<UploadBody>;
+    const eventId = typeof body.eventId === "string" ? body.eventId : "";
+    const participants = Array.isArray(body.participants) ? body.participants : [];
+
+    if (!eventId || participants.length === 0) {
+      return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
+    }
 
     // FIX: Automatically create the dummy event if it doesn't exist
     await prisma.event.upsert({
@@ -22,7 +37,7 @@ export async function POST(req: Request) {
 
     // 1. Save to Database using a Transaction
     const createdData = await prisma.$transaction(
-      participants.map((p: any) => 
+      participants.map((p) => 
         prisma.participant.create({
           data: {
             eventId: eventId,
@@ -38,14 +53,23 @@ export async function POST(req: Request) {
     );
 
     // 2. Format the exact payload Swastik requested
-    const inngestPayloads = createdData.map((record) => ({
-      name: "certificate/generate",
-      data: {
-        certificateId: record.certificate?.id,
-        participantName: record.metadata.participantName || "Unknown",
-        templateId: eventId
-      }
-    }));
+    const inngestPayloads = createdData.map((record) => {
+      // Metadata is stored as JSON in Prisma, so guard access at runtime.
+      const metadata = record.metadata as Record<string, unknown>;
+      const participantName =
+        typeof metadata.participantName === "string"
+          ? metadata.participantName
+          : "Unknown";
+
+      return {
+        name: "certificate/generate",
+        data: {
+          certificateId: record.certificate?.id,
+          participantName,
+          templateId: eventId,
+        },
+      };
+    });
 
     // 3. Bulk send to the Inngest Queue
     await inngest.send(inngestPayloads);
