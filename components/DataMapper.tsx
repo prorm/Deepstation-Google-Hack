@@ -17,6 +17,8 @@ export default function DataMapper({
   excelData: ExcelRow[] 
 }) {
   const [mapping, setMapping] = useState<Record<string, string>>({});
+  const [eventId, setEventId] = useState("");
+  const [eventName, setEventName] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
 
   const handleMapChange = (placeholder: string, header: string) => {
@@ -24,6 +26,13 @@ export default function DataMapper({
   };
 
   const handleGenerate = async () => {
+    const normalizedEventId = eventId.trim();
+    const normalizedEventName = eventName.trim();
+    if (!normalizedEventId) {
+      alert("Please enter an Event ID before generating certificates.");
+      return;
+    }
+
     setIsProcessing(true);
     
     // Transform the raw Excel rows using the user's mapping
@@ -51,22 +60,24 @@ export default function DataMapper({
       };
     });
 
-    // Hardcoded Event ID for this test run
-    const dummyEventId = "test-event-123";
-
     try {
       const response = await fetch("/api/upload", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          eventId: dummyEventId,
+          eventId: normalizedEventId,
+          eventName: normalizedEventName || undefined,
           participants: formattedParticipants
         })
       });
 
       const result = await response.json();
       if (result.success) {
-        alert(`Success! Queued ${result.queued} certificates to the engine.`);
+        if (result.deferred) {
+          alert("Saved successfully, but the queue is temporarily unavailable. Please retry later to process the pending certificates.");
+        } else {
+          alert(`Success! Queued ${result.queued} certificates to the engine.`);
+        }
       } else {
         alert("Failed to queue certificates.");
       }
@@ -81,6 +92,34 @@ export default function DataMapper({
   return (
     <div className="p-6 mt-6 bg-white rounded-xl shadow-md border border-gray-200">
       <h3 className="text-lg font-bold mb-4 text-gray-800">Map Columns to Canva Placeholders</h3>
+
+      <div className="mb-3">
+        <label htmlFor="event-id" className="block text-sm font-semibold text-gray-700 mb-1">
+          Event ID
+        </label>
+        <input
+          id="event-id"
+          type="text"
+          value={eventId}
+          onChange={(e) => setEventId(e.target.value)}
+          placeholder="example: ai-jack-of-aiml-trades-2026"
+          className="w-full border border-gray-300 rounded p-2 text-sm bg-white"
+        />
+      </div>
+
+      <div className="mb-4">
+        <label htmlFor="event-name" className="block text-sm font-semibold text-gray-700 mb-1">
+          Event Name (optional)
+        </label>
+        <input
+          id="event-name"
+          type="text"
+          value={eventName}
+          onChange={(e) => setEventName(e.target.value)}
+          placeholder="example: AI Jack Of AIML Trades"
+          className="w-full border border-gray-300 rounded p-2 text-sm bg-white"
+        />
+      </div>
       
       {REQUIRED_PLACEHOLDERS.map(placeholder => (
         <div key={placeholder} className="flex items-center justify-between mb-4 bg-gray-50 p-3 rounded border">
@@ -99,7 +138,11 @@ export default function DataMapper({
 
       <button 
         onClick={handleGenerate}
-        disabled={isProcessing || Object.keys(mapping).length < REQUIRED_PLACEHOLDERS.length}
+        disabled={
+          isProcessing ||
+          !eventId.trim() ||
+          !REQUIRED_PLACEHOLDERS.every((placeholder) => Boolean(mapping[placeholder]))
+        }
         className="w-full mt-4 bg-black text-white font-bold py-3 px-4 rounded-lg hover:bg-gray-800 disabled:opacity-50 transition-all"
       >
         {isProcessing ? "Sending to Queue..." : "Generate Certificates"}

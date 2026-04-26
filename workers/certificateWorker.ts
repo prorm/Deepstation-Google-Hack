@@ -1,5 +1,5 @@
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from "@/lib/prisma";
 
 // Fallbacks prevent the app from hard-crashing if the .env vars are missing
 const region = process.env.AWS_REGION || "us-east-1"; 
@@ -11,8 +11,6 @@ const s3Client = new S3Client({
     secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || "dummy-secret",
   }
 });
-
-const prisma = new PrismaClient();
 
 export async function processCertificateRecord(
   certificateId: string,

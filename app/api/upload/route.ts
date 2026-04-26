@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
-import { PrismaClient, type Prisma } from "@prisma/client";
+import { type Prisma } from "@prisma/client";
 import { inngest } from "@/inngest/client";
-
-const prisma = new PrismaClient();
+import { prisma } from "@/lib/prisma";
 
 type UploadParticipant = {
   email?: string;
@@ -11,6 +10,8 @@ type UploadParticipant = {
 
 type UploadBody = {
   eventId: string;
+  eventName?: string;
+  templateUrl?: string;
   participants: UploadParticipant[];
 };
 
@@ -18,20 +19,28 @@ export async function POST(req: Request) {
   try {
     const body = (await req.json()) as Partial<UploadBody>;
     const eventId = typeof body.eventId === "string" ? body.eventId : "";
+    const eventName = typeof body.eventName === "string" ? body.eventName.trim() : "";
+    const templateUrl = typeof body.templateUrl === "string" ? body.templateUrl.trim() : "";
     const participants = Array.isArray(body.participants) ? body.participants : [];
 
     if (!eventId || participants.length === 0) {
       return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
     }
 
-    // FIX: Automatically create the dummy event if it doesn't exist
+    const resolvedEventName = eventName || eventId;
+    const resolvedTemplateUrl = templateUrl || "/template.pdf";
+
+    // Ensure the event exists with production-safe defaults when omitted.
     await prisma.event.upsert({
       where: { id: eventId },
-      update: {},
+      update: {
+        ...(eventName ? { name: resolvedEventName } : {}),
+        ...(templateUrl ? { templateUrl: resolvedTemplateUrl } : {}),
+      },
       create: {
         id: eventId,
-        name: "Test Hackathon Event",
-        templateUrl: "https://example.com/dummy-template.pdf" // Required by your schema
+        name: resolvedEventName,
+        templateUrl: resolvedTemplateUrl,
       }
     });
 
@@ -72,10 +81,29 @@ export async function POST(req: Request) {
       };
     });
 
-    // 3. Bulk send to the Inngest Queue
-    await inngest.send(inngestPayloads);
+    // 3. Bulk send to the Inngest Queue. If Inngest is temporarily unavailable,
+    // keep the persisted database records and return a deferred success instead.
+    try {
+      await inngest.send(inngestPayloads);
 
-    return NextResponse.json({ success: true, queued: inngestPayloads.length });
+      return NextResponse.json({
+        success: true,
+        queued: inngestPayloads.length,
+        deferred: false,
+      });
+    } catch (queueError) {
+      console.error("Queue dispatch failed; certificates were saved and marked pending for retry.", queueError);
+
+      return NextResponse.json(
+        {
+          success: true,
+          queued: 0,
+          deferred: true,
+          message: "Certificates were saved, but the queue is temporarily unavailable. Please retry later to process them.",
+        },
+        { status: 202 }
+      );
+    }
 
   } catch (error) {
     console.error("Upload Error:", error);

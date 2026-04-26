@@ -1,9 +1,7 @@
-import { PrismaClient } from "@prisma/client";
+import { prisma } from "@/lib/prisma";
 
 // Ensure Next.js doesn't cache this page so it updates in real-time
 export const dynamic = "force-dynamic";
-
-const prisma = new PrismaClient();
 
 export default async function Dashboard() {
   // Fetch all participants and include their linked certificate data
