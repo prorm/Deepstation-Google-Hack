@@ -1,9 +1,14 @@
 // workers/certificateWorker.ts
+
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '@/lib/prisma';
+
+// FAIL FAST: Check environment variables before the worker even tries to run
+if (!process.env.AWS_REGION || !process.env.AWS_S3_BUCKET_NAME) {
+  throw new Error("CRITICAL: Missing AWS environment variables for S3.");
+}
 
 const s3Client = new S3Client({ region: process.env.AWS_REGION });
-const prisma = new PrismaClient();
 
 export async function processCertificateRecord(
   certificateId: string, 
@@ -21,10 +26,9 @@ export async function processCertificateRecord(
 
     await s3Client.send(new PutObjectCommand(uploadParams));
 
-    // The raw S3 URL (we can make this a pre-signed URL later when fetching)
     const s3Url = `https://${process.env.AWS_S3_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/certificates/${fileName}.pdf`;
 
-    // 2. Update the Database
+    // 2. Update DB
     await prisma.certificate.update({
       where: { id: certificateId },
       data: {
@@ -37,11 +41,10 @@ export async function processCertificateRecord(
 
   } catch (error) {
     console.error(`❌ Failed to process certificate ${certificateId}:`, error);
-    
-    // Fallback: Log the failure in the DB so your queue knows it failed
+
     await prisma.certificate.update({
       where: { id: certificateId },
       data: { status: 'FAILED' },
     });
   }
-}   
+}
