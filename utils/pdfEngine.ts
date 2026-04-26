@@ -6,8 +6,8 @@ import fontkit from '@pdf-lib/fontkit'; // Required for custom fonts
 export async function generateCertificateBuffer(
   templateBuffer: Buffer, 
   participantName: string, 
-  xCoord: number, 
-  yCoord: number
+  xCoord?: number | null, 
+  yCoord?: number | null
 ): Promise<Buffer> {
   
   const pdfDoc = await PDFDocument.load(templateBuffer);
@@ -26,14 +26,23 @@ export async function generateCertificateBuffer(
 
   const pages = pdfDoc.getPages();
   const firstPage = pages[0];
+  const { width, height } = firstPage.getSize();
+
+  const fontSize = 42;
+  const textWidth = customFont.widthOfTextAtSize(participantName, fontSize);
+  const textHeight = customFont.heightAtSize(fontSize);
+
+  // If x/y aren't exactly defined, default to middle of page
+  const finalX = (xCoord != null && xCoord !== 0) ? xCoord : (width / 2 - textWidth / 2);
+  const finalY = (yCoord != null && yCoord !== 0) ? yCoord : (height / 2 - textHeight / 2);
 
   // Draw the text using the custom font
   firstPage.drawText(participantName, {
-    x: xCoord,
-    y: yCoord,
-    size: 42,
+    x: finalX,
+    y: finalY,
+    size: fontSize,
     font: customFont, // Apply the font here
-    color: rgb(0, 0, 0),
+    color: rgb(1, 1, 1), // 1, 1, 1 represents pure White in pdf-lib
   });
 
   const pdfBytes = await pdfDoc.save();

@@ -29,7 +29,7 @@ export const sendCertificateEmail = inngest.createFunction(
     // Step 2: Dispatch the email via Resend
     await step.run("dispatch-email", async () => {
       await resend.emails.send({
-        from: "events@yourdomain.com", // You must verify this domain in Resend later
+        from: "onboarding@resend.dev", // You must verify this domain in Resend later
         to: email,
         subject: "Your Certificate for AI JACK OF AIML TRADES",
         html: `

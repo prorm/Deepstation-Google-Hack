@@ -7,6 +7,7 @@ type CertificateGenerateEvent = {
     certificateId: string;
     participantName: string;
     templateId: string;
+    email: string;
   };
 };
 

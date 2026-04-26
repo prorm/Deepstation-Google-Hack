@@ -64,9 +64,10 @@ export async function POST(req: Request) {
       return {
         name: "certificate/generate",
         data: {
-          certificateId: record.certificate?.id,
+          certificateId: record.certificate?.id || "",
           participantName,
           templateId: eventId,
+          email: record.email,
         },
       };
     });

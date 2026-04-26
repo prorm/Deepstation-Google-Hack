@@ -31,4 +31,5 @@ model Certificate {
   status        String      @default("PENDING") // PENDING, COMPLETED, FAILED
   fileUrl       String?     // Where it lives in AWS S3 once generated
   createdAt     DateTime    @default(now())
+  fileName  String?
 }
