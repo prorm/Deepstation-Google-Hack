@@ -31,7 +31,7 @@ export const sendCertificateEmail = inngest.createFunction(
       await resend.emails.send({
         from: "onboarding@resend.dev", // You must verify this domain in Resend later
         to: email,
-        subject: "Your Certificate for AI JACK OF AIML TRADES",
+        subject: "Your Official Certificate",
         html: `
           <p>Hi ${participantName},</p>
           <p>Congratulations on your participation! You can download your official certificate using the secure link below:</p>

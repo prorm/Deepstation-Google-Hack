@@ -1,206 +1,117 @@
-﻿# DeepStation Certificate Generator
+# Certificate Generator & Distribution Engine
 
-DeepStation is a Next.js + Inngest pipeline that turns bulk participant spreadsheets into generated PDF certificates and optional email delivery links.
+A modern, scalable Next.js application designed to automate the generation, cloud storage, and distribution of personalized certificates from bulk Excel/CSV data. Built to handle large batches of participants, volunteers, and guests with zero cloud hosting costs.
 
-The app is built for event workflows where you need to:
-1. Upload a participant sheet.
-2. Map spreadsheet columns to template placeholders.
-3. Queue certificate rendering in the background.
-4. Store certificates in S3.
-5. Send signed download links by email.
+## 🚀 Key Features
 
-## What This Repository Contains
+- **Bulk Data Ingestion**: Drag-and-drop `.xlsx`, `.xls`, or `.csv` files containing participant details.
+- **Dynamic Field Mapping**: Intuitive column mapper to link spreadsheet headers directly to certificate placeholders (e.g., `{{participantName}}`).
+- **Template-Based PDF Engine**: Overlays customized typography (using embedded fonts like Montserrat) directly onto pre-designed background PDF canvases (`public/template.pdf`).
+- **Smart Typography & Auto-Centering**: Automatically calculates string widths and centers text dynamically if manual X/Y coordinates are omitted.
+- **Asynchronous Background Processing**: Powered by **Inngest** to offload heavy rendering, cloud uploads, and email dispatches to concurrent worker queues without blocking UI threads.
+- **Free-Tier Cloud Storage**: Securely stores generated certificates in **Cloudflare R2** (S3-compatible API with 10 GB free permanent storage and zero bandwidth egress fees).
+- **Email Delivery**: Dispatches certificates directly to recipient inboxes via **Resend**.
 
-This project combines:
-1. A Next.js App Router frontend for upload and mapping.
-2. API routes for data intake and Inngest serving.
-3. A Prisma/PostgreSQL persistence layer.
-4. Inngest workers for PDF generation and email dispatch.
-5. Utility modules for PDF rendering and S3 signed URLs.
+## 💻 Tech Stack
 
-## High-Level Architecture
+- **Framework**: Next.js 16 (App Router), React 19, TypeScript 5
+- **Styling**: Tailwind CSS v4
+- **Database**: PostgreSQL (via Prisma ORM, hosted on Neon Serverless Postgres)
+- **Object Storage**: Cloudflare R2 (`@aws-sdk/client-s3`)
+- **Queue / Workers**: Inngest
+- **PDF Manipulation**: `pdf-lib`, `@pdf-lib/fontkit`
+- **Spreadsheet Parsing**: `xlsx`
+- **Email Dispatch**: Resend
 
-1. User uploads `.xlsx`, `.xls`, or `.csv` in the UI.
-2. Browser parses spreadsheet with `xlsx` and sends structured payload to `/api/upload`.
-3. API writes Event, Participant, and Certificate records to PostgreSQL (via Prisma).
-4. API emits one `certificate/generate` event per participant.
-5. Inngest worker generates PDF and uploads to S3.
-6. Worker updates certificate row status in DB.
-7. Worker emits `certificate/completed`.
-8. Email worker creates a signed S3 URL and sends mail through Resend.
-
-## Tech Stack
-
-1. Framework: Next.js 16 (App Router), React 19, TypeScript 5
-2. ORM/Database: Prisma + PostgreSQL
-3. Background orchestration: Inngest
-4. File parsing: `xlsx`
-5. PDF generation: `pdf-lib` + `@pdf-lib/fontkit`
-6. Storage: AWS S3
-7. Email: Resend
-8. Styling: Tailwind CSS v4
-
-## Directory Guide
+## 📁 Directory Guide
 
 1. `app/page.tsx`: Landing page and uploader entry point.
-2. `components/ExcelUploader.tsx`: Spreadsheet ingestion and parsing.
-3. `components/DataMapper.tsx`: Placeholder-to-column mapping and upload trigger.
-4. `app/api/upload/route.ts`: Validation, DB insert transaction, queue emission.
-5. `app/api/inngest/route.ts`: Inngest function registration endpoint.
-6. `inngest/functions.ts`: Certificate generation worker.
-7. `inngest/emailWorker.ts`: Email dispatch worker.
-8. `workers/certificateWorker.ts`: S3 upload + DB status updates.
-9. `utils/pdfEngine.ts`: Template rendering with custom font and centering.
-10. `utils/s3Presigner.ts`: Time-limited download URL generation.
-11. `prisma/schema.prisma`: Data model for events/participants/certificates.
+2. `app/dashboard/page.tsx`: Real-time certificate generation status tracking.
+3. `components/ExcelUploader.tsx`: Spreadsheet ingestion and parsing.
+4. `components/DataMapper.tsx`: Placeholder-to-column mapping and upload trigger.
+5. `app/api/upload/route.ts`: Validation, DB insert transaction, queue emission.
+6. `app/api/inngest/route.ts`: Inngest function registration endpoint.
+7. `inngest/functions.ts`: Certificate generation worker.
+8. `inngest/emailWorker.ts`: Email dispatch worker.
+9. `workers/certificateWorker.ts`: R2/S3 upload and DB status updates.
+10. `utils/pdfEngine.ts`: Template rendering with custom font and auto-centering.
+11. `utils/s3Presigner.ts`: Time-limited secure download URL generation.
+12. `prisma/schema.prisma`: Data models for events, participants, and certificates.
 
-## Data Model
+## 🛠️ Local Development & Setup
 
-The schema includes three core models:
+### 1. Prerequisites
 
-1. `Event`
-2. `Participant` (belongs to one Event)
-3. `Certificate` (one-to-one with Participant)
+- Node.js (v18+)
+- PostgreSQL Database (e.g., free serverless instance on [Neon](https://neon.tech))
+- Cloudflare R2 Bucket (or any S3-compatible bucket)
+- Resend Account (free API key)
+- Inngest CLI
 
-Current status values are stored as strings (`PENDING`, `COMPLETED`, `FAILED`).
+### 2. Environment Configuration
 
-## Environment Variables
+Copy the example configuration to `.env`:
 
-Create a `.env` in project root with:
-
-```dotenv
-DATABASE_URL="postgresql://<user>:<password>@<host>:5432/<db>?schema=public"
-
-AWS_REGION="us-east-1"
-AWS_ACCESS_KEY_ID="<aws-access-key-id>"
-AWS_SECRET_ACCESS_KEY="<aws-secret-access-key>"
-AWS_S3_BUCKET_NAME="<s3-bucket-name>"
-
-RESEND_API_KEY="<resend-api-key>"
-
-# Optional local dev behavior for Inngest
-INNGEST_DEV="1"
+```bash
+cp .env.example .env
 ```
 
-Notes:
-1. The code expects `AWS_S3_BUCKET_NAME` (not `S3_BUCKET_NAME`).
-2. If `RESEND_API_KEY` is missing, email worker skips dispatch (dev-friendly behavior).
-3. If AWS keys are missing, certificate upload is skipped but DB status logic still runs.
+Fill in your service credentials:
 
-## Local Setup
+```env
+# Database (Neon / PostgreSQL)
+DATABASE_URL="postgresql://username:password@ep-xyz.aws.neon.tech/neondb?sslmode=require"
 
-1. Install dependencies:
+# Cloudflare R2 (S3-Compatible Storage)
+ENDPOINT="https://<account_id>.r2.cloudflarestorage.com"
+ACCOUNT_ID="your_cloudflare_account_id"
+ACCESS_KEY_ID="your_r2_access_key_id"
+SECRET_ACCESS_KEY="your_r2_secret_access_key"
+BUCKET_NAME="certificates"
+
+# Background Jobs
+INNGEST_DEV="1"
+
+# Email Delivery
+RESEND_API_KEY="re_your_api_key"
+```
+
+### 3. Install Dependencies & Synchronize Schema
 
 ```bash
 npm install
-```
-
-2. Generate Prisma client:
-
-```bash
-npx prisma generate
-```
-
-3. Sync schema (development):
-
-```bash
 npx prisma db push
 ```
 
-## Running Locally
+### 4. Running the Complete Stack
 
-Run Next.js and Inngest together in separate terminals.
-
-Terminal 1:
+To run the application locally, start both the Next.js development server and the Inngest local orchestrator:
 
 ```bash
+# Terminal 1: Start Next.js App
 npm run dev
+
+# Terminal 2: Start Inngest Background Worker Engine
+npx inngest-cli dev
 ```
 
-Terminal 2:
+- Web UI: [http://localhost:3000](http://localhost:3000)
+- Inngest Dashboard: [http://127.0.0.1:8288](http://127.0.0.1:8288)
+- Admin Dashboard: [http://localhost:3000/dashboard](http://localhost:3000/dashboard)
 
-```bash
-npx inngest-cli dev -u http://localhost:3000/api/inngest
-```
+## 📂 Architecture Flow
 
-Then open `http://localhost:3000`.
+1. **Upload & Map**: User uploads spreadsheet data and maps fields via `/`.
+2. **Database Sync**: `/api/upload` batch-creates participant records in PostgreSQL via Prisma transactions and dispatches `certificate/generate` events to Inngest.
+3. **Queue 1 (Certificate Worker)**: Inngest executes `generateCertificate`, renders the text onto the base PDF canvas, and streams the finished binary to Cloudflare R2.
+4. **Queue 2 (Email Worker)**: Worker 1 fires a `certificate/completed` event, triggering the email worker to fetch a secure signed URL and dispatch the certificate via Resend.
 
-## Runtime Behavior Details
-
-### Upload and Mapping
-
-1. Spreadsheet is parsed in browser.
-2. Operator provides a required `eventId` and optional `eventName`.
-3. `participantName` is currently the only required placeholder.
-4. Email is extracted from `Email` or `email` column.
-5. All unmapped columns are preserved in participant metadata JSON.
-
-### API Ingestion (`/api/upload`)
-
-1. Validates `eventId` and non-empty participants list.
-2. Upserts an `Event` using provided `eventName`/`templateUrl` when present.
-3. Uses `/template.pdf` as a safe default template URL for newly created events.
-4. Creates participants and nested certificate rows in one transaction.
-5. Emits bulk `certificate/generate` events to Inngest.
-6. If the queue is temporarily unavailable, the upload still succeeds and returns a deferred response so the rows remain saved.
-
-### Certificate Worker
-
-1. Loads `public/template.pdf`.
-2. Falls back to a blank PDF if template is unavailable.
-3. Renders participant name with `public/fonts/Montserrat-Bold.ttf`.
-4. Uploads generated PDF to S3 via AWS SDK.
-5. Updates certificate status in DB.
-6. Emits `certificate/completed` event.
-
-### Email Worker
-
-1. Receives completion event with participant details.
-2. Creates signed S3 download URL (7-day expiry).
-3. Sends email with link using Resend.
-
-## Quality Checks
+## 🛡️ Quality Checks
 
 Use these commands before deployment:
 
 ```bash
 npm run lint
+npx tsc --noEmit
 npm run build
 ```
-
-Optional DB checks:
-
-```bash
-npx prisma validate
-```
-
-## Deployment Checklist
-
-1. Environment variables set in deployment target.
-2. `DATABASE_URL` points to production DB and is reachable.
-3. Prisma client generated for current schema.
-4. S3 bucket exists and IAM credentials allow `PutObject` and `GetObject`.
-5. Resend sender domain configured for production sending.
-6. `public/template.pdf` exists and matches desired design.
-7. `public/fonts/Montserrat-Bold.ttf` exists.
-8. `npm run lint` passes.
-9. `npm run build` passes.
-10. Inngest endpoint is reachable in deployed environment.
-
-## Known Production Risks To Address
-
-1. Secrets must never be committed to source control.
-2. `from` email in Resend uses onboarding domain and should be replaced with your verified sender.
-3. There is currently no automated test suite (`npm test` is not defined).
-
-## Suggested Next Enhancements
-
-1. Replace string certificate statuses with Prisma enum.
-2. Add server-side payload schema validation (for example, with `zod`).
-3. Add integration tests for `/api/upload` and Inngest event flow.
-4. Add auth/admin guardrails for upload and dashboard routes.
-5. Support dynamic templates and per-event template coordinates.
-
-## License / Usage
-
-Internal project for certificate automation workflows.

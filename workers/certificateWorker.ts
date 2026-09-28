@@ -1,14 +1,19 @@
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { prisma } from "@/lib/prisma";
 
-// Fallbacks prevent the app from hard-crashing if the .env vars are missing
-const region = process.env.AWS_REGION || "us-east-1"; 
+// Cloudflare R2 / AWS S3 Configuration
+const endpoint = process.env.ENDPOINT || process.env.CLOUDFLARE_R2_ENDPOINT;
+const accessKeyId = process.env.ACCESS_KEY_ID || process.env.AWS_ACCESS_KEY_ID || "dummy-key";
+const secretAccessKey = process.env.SECRET_ACCESS_KEY || process.env.AWS_SECRET_ACCESS_KEY || "dummy-secret";
+const region = endpoint ? "auto" : (process.env.AWS_REGION || "us-east-1");
+const bucketName = process.env.BUCKET_NAME || process.env.R2_BUCKET_NAME || process.env.AWS_S3_BUCKET_NAME || "certificates";
 
 const s3Client = new S3Client({
-  region: region,
+  region,
+  ...(endpoint ? { endpoint } : {}),
   credentials: {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID || "dummy-key",
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || "dummy-secret",
+    accessKeyId,
+    secretAccessKey,
   }
 });
 
@@ -18,11 +23,12 @@ export async function processCertificateRecord(
   fileName: string
 ) {
   try {
-    const bucketName = process.env.AWS_S3_BUCKET_NAME || "dummy-local-bucket";
-    const s3Url = `https://${bucketName}.s3.${region}.amazonaws.com/${fileName}.pdf`;
+    const s3Url = endpoint
+      ? `${endpoint}/${bucketName}/${fileName}.pdf`
+      : `https://${bucketName}.s3.${region}.amazonaws.com/${fileName}.pdf`;
 
-    // Only attempt real AWS upload if you have the keys in your .env
-    if (process.env.AWS_ACCESS_KEY_ID && process.env.AWS_ACCESS_KEY_ID !== "dummy-key") {
+    // Upload if valid keys are provided
+    if (accessKeyId && accessKeyId !== "dummy-key") {
       const uploadParams = {
         Bucket: bucketName,
         Key: `${fileName}.pdf`,
@@ -30,9 +36,9 @@ export async function processCertificateRecord(
         ContentType: 'application/pdf',
       };
       await s3Client.send(new PutObjectCommand(uploadParams));
-      console.log(`✅ Uploaded to S3: ${s3Url}`);
+      console.log(`✅ Uploaded certificate: ${s3Url}`);
     } else {
-      console.warn(`⚠️ AWS Keys missing in .env. Skipped real S3 upload for ${fileName}.`);
+      console.warn(`⚠️ Storage Keys missing in .env. Skipped upload for ${fileName}.`);
     }
 
     // Update the database status to COMPLETED
