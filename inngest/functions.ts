@@ -2,9 +2,6 @@
 import { inngest } from "./client";
 import { generateCertificateBuffer } from "../utils/pdfEngine";
 import { processCertificateRecord } from "../workers/certificateWorker";
-import { PDFDocument } from 'pdf-lib';
-import { promises as fs } from 'fs';
-import path from 'path';
 
 export const generateCertificate = inngest.createFunction(
   { 
@@ -13,65 +10,44 @@ export const generateCertificate = inngest.createFunction(
     concurrency: { limit: 50 } // Limits to 50 concurrent PDF generations
   },
   async ({ event, step }) => {
-    const { certificateId, participantName, email } = event.data;
+    const { 
+      certificateId, 
+      participantName, 
+      email, 
+      track, 
+      usn, 
+      teamName 
+    } = event.data;
 
-    // Step 1: Fetch Template Details
-    const template = await step.run("fetch-template-details", async () => {
-      // By returning null for coordinates, we trigger the default centering behavior
-      return { url: "...", x: null, y: null };
-    });
-
-    // Step 2: Generate PDF & encode as Base64 to safely pass through JSON queue
+    // Step 1: Generate PDF using track-specific template from Participation_volunteer_certificate
     const pdfBase64 = await step.run("render-pdf", async () => {
-      let templateBuffer: Buffer;
-      try {
-        const templatePath = path.join(process.cwd(), 'public/template.pdf');
-        templateBuffer = await fs.readFile(templatePath);
-      } catch (error) {
-        console.warn("Could not find public/template.pdf, falling back to a blank canvas.");
-        const tempDoc = await PDFDocument.create();
-        tempDoc.addPage([800, 600]); 
-        const tempBytes = await tempDoc.save();
-        templateBuffer = Buffer.from(tempBytes); 
-      }
-
-      const rawBuffer = await generateCertificateBuffer(
-        templateBuffer,
+      const rawBuffer = await generateCertificateBuffer({
         participantName,
-        template.x,
-        template.y
-      );
+        track,
+        usn,
+        teamName,
+      });
       
       // Encode binary to string for the queue
       return Buffer.from(rawBuffer).toString('base64'); 
     });
 
-    // Step 3: Upload to S3 & Update DB
+    // Step 2: Save Locally (and optionally to Cloud) & Update DB
     const dbRecord = await step.run("upload-and-update-db", async () => {
-      // Decode string back to binary for AWS S3
+      // Decode string back to binary
       const finalBuffer = Buffer.from(pdfBase64, 'base64');
+      const safeParticipantName = (participantName || "Participant").replace(/[^a-zA-Z0-9_-]/g, "_");
+      const fileName = `${certificateId || "cert"}-${safeParticipantName}`;
       
       await processCertificateRecord(
         certificateId,
         finalBuffer, 
-        `${certificateId}-${participantName}`
+        fileName
       );
 
-      // We already have the email from the initial event
-      return { email }; 
+      return { email, fileName }; 
     });
 
-    // Step 4: THE HAND-OFF - Trigger the Email Worker
-    // This MUST happen here, not in the email worker!
-    await step.sendEvent("trigger-email-worker", {
-      name: "certificate/completed",
-      data: {
-        email: dbRecord.email,
-        participantName: participantName,
-        s3FileName: `${certificateId}-${participantName}`,
-      },
-    });
-
-    return { success: true, certificateId };
+    return { success: true, certificateId, fileName: dbRecord.fileName };
   }
 );

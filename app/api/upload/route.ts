@@ -61,28 +61,65 @@ export async function POST(req: Request) {
       )
     );
 
-    // 2. Format the exact payload Swastik requested
+    // 2. Format the payload for Inngest queue including track, USN, and teamName
     const inngestPayloads = createdData.map((record) => {
-      // Metadata is stored as JSON in Prisma, so guard access at runtime.
-      const metadata = record.metadata as Record<string, unknown>;
+      const metadata = (record.metadata || {}) as Record<string, unknown>;
+      
       const participantName =
-        typeof metadata.participantName === "string"
-          ? metadata.participantName
-          : "Unknown";
+        typeof metadata.participantName === "string" && metadata.participantName.trim()
+          ? metadata.participantName.trim()
+          : typeof metadata.name === "string" && metadata.name.trim()
+          ? metadata.name.trim()
+          : typeof metadata["Full Name"] === "string" && metadata["Full Name"].trim()
+          ? metadata["Full Name"].trim()
+          : "Participant";
+
+      const track =
+        metadata.track != null
+          ? String(metadata.track).trim()
+          : metadata.Track != null
+          ? String(metadata.Track).trim()
+          : metadata.category != null
+          ? String(metadata.category).trim()
+          : metadata.Category != null
+          ? String(metadata.Category).trim()
+          : "1";
+
+      const usn =
+        typeof metadata.usn === "string"
+          ? metadata.usn.trim()
+          : typeof metadata.USN === "string"
+          ? metadata.USN.trim()
+          : typeof metadata["Roll No"] === "string"
+          ? metadata["Roll No"].trim()
+          : null;
+
+      const teamName =
+        typeof metadata.teamName === "string"
+          ? metadata.teamName.trim()
+          : typeof metadata.team === "string"
+          ? metadata.team.trim()
+          : typeof metadata.Team === "string"
+          ? metadata.Team.trim()
+          : typeof metadata["Team Name"] === "string"
+          ? metadata["Team Name"].trim()
+          : null;
 
       return {
         name: "certificate/generate",
         data: {
           certificateId: record.certificate?.id || "",
           participantName,
+          track,
+          usn,
+          teamName,
           templateId: eventId,
           email: record.email,
         },
       };
     });
 
-    // 3. Bulk send to the Inngest Queue. If Inngest is temporarily unavailable,
-    // keep the persisted database records and return a deferred success instead.
+    // 3. Bulk send to the Inngest Queue
     try {
       await inngest.send(inngestPayloads);
 
